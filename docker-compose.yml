@@ -1,0 +1,33 @@
+services:
+  weather-app:
+    build: .
+    container_name: weather-app-container
+    restart: unless-stopped
+    environment:
+     OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY}
+     LATITUDE: ${LATITUDE}
+     LONGITUDE: ${LONGITUDE}
+     WEATHER_SLEEP_SECONDS: ${WEATHER_SLEEP_SECONDS}
+     POSTGRES_HOST: postgres-db-container
+     POSTGRES_PORT: 5432
+     POSTGRES_USER: ${POSTGRES_USER}
+     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+     POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres-db
+
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: postgres-db-container
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
