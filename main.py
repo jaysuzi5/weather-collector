@@ -44,7 +44,8 @@ class WeatherAPIWrapper:
         url += f"?{query_string}"
         return url
 
-    def _parse_response(self, response):
+    @staticmethod
+    def _parse_response(response):
         """
         Parses the API response and handles potential errors.
 
@@ -95,7 +96,7 @@ class WeatherAPIWrapper:
         params = {"lat": lat, "lon": lon, "units": units}
         url = self._build_url(endpoint, params)
         response = requests.get(url)
-        response = self._parse_response(response)
+        response = WeatherAPIWrapper._parse_response(response)
         if response:
             data = {
                 'temperature': round(response['main']['temp']),
@@ -109,7 +110,7 @@ class WeatherAPIWrapper:
             }
         return data
 
-    def get_forecast_by_coordinates(self, lat, lon, units="imperial", days=0):
+    def get_forecast_by_coordinates(self, lat, lon, units="imperial"):
         """
         Gets the weather forecast for a given latitude and longitude.
 
@@ -120,7 +121,6 @@ class WeatherAPIWrapper:
             lon (float): The longitude.
             units (str, optional): The unit system ('metric', 'imperial', or 'standard').
                                    Defaults to 'imperial'.
-            days (int, optional): The number of days of forecast to retrieve.
 
         Returns:
             dict or None: A dictionary where keys are dates and values are
@@ -133,7 +133,7 @@ class WeatherAPIWrapper:
         params = {"lat": lat, "lon": lon, "units": units}
         url = self._build_url(endpoint, params)
         response = requests.get(url)
-        response = self._parse_response(response)
+        response = WeatherAPIWrapper._parse_response(response)
 
         if response and 'list' in response:
             data = {}
@@ -202,7 +202,7 @@ def call_api(weather_api: WeatherAPIWrapper, latitude: float, longitude: float):
         logging.info(f"Feels Like: {weather['feels_like']}  Wind Speed: {weather['wind_speed']}  "
               f"Wind Direction: {weather['wind_direction']}")
 
-    forecast = weather_api.get_forecast_by_coordinates(latitude, longitude, days=5)
+    forecast = weather_api.get_forecast_by_coordinates(latitude, longitude)
     if forecast:
         for day, weather in forecast.items():
             logging.info(
@@ -233,6 +233,80 @@ def connect_to_database():
         logging.error(f"Error connecting to the database: {e}")
         return None
 
+
+def create_tables() -> bool:
+    """
+    Checks if the weather_current and weather_forecast tables exist in the
+    database, and creates them if they do not.
+    """
+    success = True
+    conn = connect_to_database()
+    if not conn:
+        logging.error("create_tables:  Database connection is not established.")
+        return False
+
+    cursor = conn.cursor()
+
+    try:
+        # Check for weather_current table
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE  table_name   = 'weather_current'
+            );
+        """)
+        weather_current_exists = cursor.fetchone()[0]
+
+        if not weather_current_exists:
+            logging.info("Creating weather_current table.")
+            cursor.execute("""
+                CREATE TABLE weather_current (
+                    collection_time TIMESTAMPTZ PRIMARY KEY,
+                    temperature INTEGER,
+                    temperature_min INTEGER,
+                    temperature_max INTEGER,
+                    humidity INTEGER,
+                    description VARCHAR(200),
+                    feels_like INTEGER,
+                    wind_speed DECIMAL,
+                    wind_direction INTEGER
+                );
+            """)
+            conn.commit()
+
+        # Check for weather_forecast table
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE  table_name   = 'weather_forecast'
+            );
+        """)
+        weather_forecast_exists = cursor.fetchone()[0]
+
+        if not weather_forecast_exists:
+            logging.info("Creating weather_forecast table.")
+            cursor.execute("""
+                CREATE TABLE weather_forecast (
+                    collection_time TIMESTAMPTZ PRIMARY KEY,
+                    temperature_min INTEGER,
+                    temperature_max INTEGER,
+                    humidity_min INTEGER,
+                    humidity_max INTEGER,
+                    description VARCHAR(200)
+                );
+            """)
+            conn.commit()
+
+    except psycopg2.Error as e:
+        success = False
+        logging.error(f"create_tables: Error creating tables: {e}")
+    finally:
+        cursor.close()
+
+    if conn:
+        conn.close()
+    return success
+
 def main():
     """
     Main function to continuously retrieve and log weather information.
@@ -246,14 +320,21 @@ def main():
     longitude = float(get_env_variable("LONGITUDE"))
     total_sleep_time = float(get_env_variable("WEATHER_SLEEP_SECONDS"))
     weather_api = WeatherAPIWrapper(api_key)
-    while True:
-        conn = connect_to_database()
+
+    logging.info('Starting Weather Collector')
+    logging.info(f'latitude: {latitude}  longitude: {longitude}')
+
+    tables_exist = create_tables()
+
+    while tables_exist:
         start_time = datetime.now()
         logging.info(f'Running at: {start_time}')
-        logging.info(f'latitude: {latitude}  longitude: {longitude}')
-        call_api(weather_api, latitude, longitude)
+        conn = connect_to_database()
         if conn:
+            call_api(weather_api, latitude, longitude)
             conn.close()
+        else:
+            logging.error('Could not connect to database')
         end_time = datetime.now()
         sleep_time = total_sleep_time - (end_time - start_time).total_seconds()
         sleep(sleep_time)
