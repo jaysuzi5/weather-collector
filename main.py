@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from time import sleep
 import logging
+import decimal
 import psycopg2
 import os
 import requests
@@ -76,7 +77,7 @@ class WeatherAPIWrapper:
             logging.info(f"Response Content: {response.text}")
             return None
 
-    def get_current_weather_by_coordinates(self, lat, lon, units="imperial"):
+    def load_current_weather(self, lat, lon, units="imperial"):
         """
         Gets the current weather for a given latitude and longitude.
 
@@ -86,29 +87,56 @@ class WeatherAPIWrapper:
             units (str, optional): The unit system ('metric', 'imperial', or 'standard').
                                    Defaults to 'imperial'.
 
-        Returns:
-            dict or None: A dictionary containing the current weather data,
-                           including temperature, humidity, description, etc.
-                           Returns None if there was an error.
+        Inserts the weather data into the 'weather_current' table.
         """
-        data = None
+        conn = None
+        cursor = None
+        
         endpoint = "weather"
         params = {"lat": lat, "lon": lon, "units": units}
         url = self._build_url(endpoint, params)
         response = requests.get(url)
         response = WeatherAPIWrapper._parse_response(response)
         if response:
-            data = {
-                'temperature': round(response['main']['temp']),
-                'temperature_min': round(response['main']['temp_min']),
-                'temperature_max': round(response['main']['temp_max']),
-                'humidity': response['main']['humidity'],
-                'description': response['weather'][0]['description'],
-                'feels_like': round(response['main']['feels_like']),
-                'wind_speed': response['wind']['speed'],
-                'wind_direction': response['wind']['deg']
-            }
-        return data
+            try:
+                conn = connect_to_database()
+                if conn:
+                    cursor = conn.cursor()
+                    current_time = datetime.now()
+                    data = {
+                        'collection_time': current_time,
+                        'temperature': round(response['main']['temp']),
+                        'temperature_min': round(response['main']['temp_min']),
+                        'temperature_max': round(response['main']['temp_max']),
+                        'humidity': response['main']['humidity'],
+                        'description': response['weather'][0]['description'],
+                        'feels_like': round(response['main']['feels_like']),
+                        'wind_speed': decimal.Decimal(response['wind']['speed']),
+                        'wind_direction': response['wind']['deg']
+                    }
+                    cursor.execute("""
+                        INSERT INTO weather_current (collection_time, temperature, temperature_min, temperature_max, humidity, description, feels_like, wind_speed, wind_direction)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (collection_time) DO UPDATE SET
+                            temperature = EXCLUDED.temperature,
+                            temperature_min = EXCLUDED.temperature_min,
+                            temperature_max = EXCLUDED.temperature_max,
+                            humidity = EXCLUDED.humidity,
+                            description = EXCLUDED.description,
+                            feels_like = EXCLUDED.feels_like,
+                            wind_speed = EXCLUDED.wind_speed,
+                            wind_direction = EXCLUDED.wind_direction;
+                    """, (data['collection_time'], data['temperature'], data['temperature_min'], data['temperature_max'], data['humidity'], data['description'], data['feels_like'], data['wind_speed'], data['wind_direction']))
+                    conn.commit()
+                    logging.info("load_current_weather:  Successfully Loaded Current Weather")
+            except psycopg2.Error as e:
+                logging.error(f"load_current_weather: Error inserting/updating weather_current: {e}")
+            finally:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
+
 
     def get_forecast_by_coordinates(self, lat, lon, units="imperial"):
         """
@@ -194,14 +222,6 @@ def call_api(weather_api: WeatherAPIWrapper, latitude: float, longitude: float):
         latitude (float): The latitude for the weather data.
         longitude (float): The longitude for the weather data.
     """
-    weather = weather_api.get_current_weather_by_coordinates(latitude, longitude)
-    if weather:
-        logging.info(f"Current: Temp:{weather['temperature']}  Minimum Temp: {weather['temperature_min']}  "
-              f"Maximum Temp: {weather['temperature_max']} Humidity: {weather['humidity']}  "
-              f"Description: {weather['description']}")
-        logging.info(f"Feels Like: {weather['feels_like']}  Wind Speed: {weather['wind_speed']}  "
-              f"Wind Direction: {weather['wind_direction']}")
-
     forecast = weather_api.get_forecast_by_coordinates(latitude, longitude)
     if forecast:
         for day, weather in forecast.items():
@@ -333,6 +353,7 @@ def main():
         logging.info(f'Running at: {start_time}')
         conn = connect_to_database()
         if conn:
+            weather_api.load_current_weather(latitude, longitude)
             call_api(weather_api, latitude, longitude)
             conn.close()
         else:
