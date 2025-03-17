@@ -287,12 +287,14 @@ def create_tables() -> bool:
             logging.info("Creating weather_forecast table.")
             cursor.execute("""
                 CREATE TABLE weather_forecast (
-                    collection_time TIMESTAMPTZ PRIMARY KEY,
+                    collection_time TIMESTAMPTZ,
+                    forecast_date DATE,
                     temperature_min INTEGER,
                     temperature_max INTEGER,
                     humidity_min INTEGER,
                     humidity_max INTEGER,
-                    description VARCHAR(200)
+                    description VARCHAR(200),
+                    PRIMARY KEY (collection_time, forecast_date)
                 );
             """)
             conn.commit()
