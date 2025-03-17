@@ -1,3 +1,4 @@
+import sys
 from datetime import date, datetime
 from time import sleep
 import logging
@@ -103,7 +104,7 @@ class WeatherAPIWrapper:
                 if conn:
                     cursor = conn.cursor()
                     current_time = datetime.now()
-                    data = {
+                    data : dict = {
                         'collection_time': current_time,
                         'temperature': round(response['main']['temp']),
                         'temperature_min': round(response['main']['temp_min']),
@@ -137,8 +138,7 @@ class WeatherAPIWrapper:
                 if conn:
                     conn.close()
 
-
-    def get_forecast_by_coordinates(self, lat, lon, units="imperial"):
+    def load_forecast(self, lat, lon, units="imperial"):
         """
         Gets the weather forecast for a given latitude and longitude.
 
@@ -150,43 +150,53 @@ class WeatherAPIWrapper:
             units (str, optional): The unit system ('metric', 'imperial', or 'standard').
                                    Defaults to 'imperial'.
 
-        Returns:
-            dict or None: A dictionary where keys are dates and values are
-                           dictionaries containing the daily forecast data
-                           (min/max temperature, min/max humidity, description).
-                           Returns None if there was an error.
+       Inserts the weather data into the 'weather_forecast' table.
         """
-        data = None
+        conn = None
+        cursor = None
+
         endpoint = "forecast"
         params = {"lat": lat, "lon": lon, "units": units}
         url = self._build_url(endpoint, params)
         response = requests.get(url)
         response = WeatherAPIWrapper._parse_response(response)
 
-        if response and 'list' in response:
-            data = {}
-            for item in response['list']:
-                weather_date = date.fromtimestamp(item['dt'])
-                if not weather_date in data:
-                    data[weather_date] = {
-                        'temperature_min': round(item['main']['temp_min']),
-                        'temperature_max': round(item['main']['temp_max']),
-                        'humidity_min': item['main']['humidity'],
-                        'humidity_max': item['main']['humidity'],
-                        'description': item['weather'][0]['description']
-                    }
-                else:
-                    if item['main']['temp_min'] < data[weather_date]['temperature_min']:
-                        data[weather_date]['temperature_min'] = round(item['main']['temp_min'])
-                    if item['main']['temp_max'] > data[weather_date]['temperature_max']:
-                        data[weather_date]['temperature_max'] = round(item['main']['temp_max'])
-                    if item['main']['humidity'] < data[weather_date]['humidity_min']:
-                        data[weather_date]['humidity_min'] = item['main']['humidity']
-                    if item['main']['humidity'] > data[weather_date]['humidity_max']:
-                        data[weather_date]['humidity_max'] = item['main']['humidity']
-                    if item['weather'][0]['description'] not in data[weather_date]['description']:
-                        data[weather_date]['description'] += ", " + item['weather'][0]['description']
-        return data
+        if response:
+            try:
+                conn = connect_to_database()
+                if conn:
+                    cursor = conn.cursor()
+                    current_time = datetime.now()
+                    for item in response['list']:
+                        forecast_date = date.fromtimestamp(item['dt'])
+                        data = {
+                            'collection_time': current_time,
+                            'forecast_date': forecast_date,
+                            'temperature_min': round(item['main']['temp_min']),
+                            'temperature_max': round(item['main']['temp_max']),
+                            'humidity_min': item['main']['humidity'],
+                            'humidity_max': item['main']['humidity'],
+                            'description': item['weather'][0]['description']
+                        }
+                        cursor.execute("""
+                        INSERT INTO weather_forecast (collection_time, forecast_date, temperature_min, temperature_max, humidity_min, humidity_max, description)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                         ON CONFLICT (collection_time, forecast_date) DO UPDATE SET
+                            temperature_min = EXCLUDED.temperature_min,
+                            temperature_max = EXCLUDED.temperature_max,
+                            humidity_min = EXCLUDED.humidity_min,
+                            humidity_max = EXCLUDED.humidity_max,
+                            description = EXCLUDED.description;
+                        """, (data['collection_time'], data['forecast_date'], data['temperature_min'], data['temperature_max'], data['humidity_min'], data['humidity_max'], data['description']))
+                        conn.commit()
+                    logging.info("load_forecast: Successfully Loaded Forecast Weather")
+            except psycopg2.Error as e:
+                logging.error(f"load_forecast: Error inserting/updating weather_forecast: {e}")
+            finally:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
 
 
 def get_env_variable(var_name, default=None):
@@ -212,25 +222,6 @@ def get_env_variable(var_name, default=None):
             raise ValueError(f"Environment variable '{var_name}' not set.")
     return value
 
-
-def call_api(weather_api: WeatherAPIWrapper, latitude: float, longitude: float):
-    """
-    Calls the weather API to retrieve and logs the current weather and forecast data.
-
-    Args:
-        weather_api (WeatherAPIWrapper): An instance of the WeatherAPIWrapper.
-        latitude (float): The latitude for the weather data.
-        longitude (float): The longitude for the weather data.
-    """
-    forecast = weather_api.get_forecast_by_coordinates(latitude, longitude)
-    if forecast:
-        for day, weather in forecast.items():
-            logging.info(
-                f"Date: {day}  Minimum Temp: {weather['temperature_min']}  Maximum Temp: {weather['temperature_max']} "
-                f"Minimum Humidity: {weather['humidity_min']}  Maximum Humidity: {weather['humidity_max']} "
-                f"Description: {weather['description']}")
-
-
 def connect_to_database():
     """Connects to the PostgreSQL database."""
     db_host = get_env_variable("POSTGRES_HOST")
@@ -252,7 +243,6 @@ def connect_to_database():
     except psycopg2.Error as e:
         logging.error(f"Error connecting to the database: {e}")
         return None
-
 
 def create_tables() -> bool:
     """
@@ -351,13 +341,8 @@ def main():
     while tables_exist:
         start_time = datetime.now()
         logging.info(f'Running at: {start_time}')
-        conn = connect_to_database()
-        if conn:
-            weather_api.load_current_weather(latitude, longitude)
-            call_api(weather_api, latitude, longitude)
-            conn.close()
-        else:
-            logging.error('Could not connect to database')
+        weather_api.load_current_weather(latitude, longitude)
+        weather_api.load_forecast(latitude, longitude)
         end_time = datetime.now()
         sleep_time = total_sleep_time - (end_time - start_time).total_seconds()
         sleep(sleep_time)
