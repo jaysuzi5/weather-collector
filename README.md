@@ -38,12 +38,12 @@ Future planned enhancements include:
 2. Create a `.env` file in the project root with the following variables:
 
    ```bash
-    LATITUDE=<your-weather-location-latitude>
-    LONGITUDE=<your-weather-location-longitude>
-    WEATHER_SLEEP_SECONDS=<time-to-sleep-between-weather-calls-in-seconds>
-    OPENWEATHER_API_KEY=<your-open-weather-api-key>
-    POSTGRES_USER=<your-postgresql-username>
-    POSTGRES_PASSWORD=<your-postgresql-password>
+    LATITUDE=<<your-weather-location-latitude>>
+    LONGITUDE=<<your-weather-location-longitude>>
+    WEATHER_SLEEP_SECONDS=<<time-to-sleep-between-weather-calls-in-seconds>>
+    OPENWEATHER_API_KEY=<<your-open-weather-api-key>>
+    POSTGRES_USER=<<your-postgresql-username>>
+    POSTGRES_PASSWORD=<<your-postgresql-password>>
     POSTGRES_DB=<<your-postgresql-database-name>>
    ```
 
