@@ -29,6 +29,14 @@ jobs:
           patchAll: true
           fallbackTag: "0.1.0"
 
+      - name: Check for Version Bump
+        id: check_version
+        run: |
+          if [ -z "${{ steps.semver.outputs.next }}" ]; then
+            echo "No version bump detected. Skipping workflow."
+            exit 0
+          fi
+
       - name: Push tag
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.2
