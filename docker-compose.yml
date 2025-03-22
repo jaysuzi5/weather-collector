@@ -3,6 +3,8 @@ services:
     build: .
     container_name: weather-app-container
     restart: unless-stopped
+    env_file:
+      - environments.env
     environment:
      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY}
      LATITUDE: ${LATITUDE}
@@ -22,6 +24,8 @@ services:
     image: postgres:16-alpine
     container_name: postgres-db-container
     restart: unless-stopped
+    env_file:
+      - environments.env
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
