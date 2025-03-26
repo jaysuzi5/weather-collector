@@ -11,7 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code into the container
-COPY src/weather-collector.py .
+COPY src/ /app/src/
 
 # Set environment variables
 ENV OPENWEATHER_API_KEY=tbd
@@ -20,4 +20,4 @@ ENV LONGITUDE=-74.0060
 ENV WEATHER_SLEEP_SECONDS=300
 
 # Command to run the application
-CMD ["python", "src/weather-collector.py"]
+CMD ["python", "/app/src/weather-collector.py"]
