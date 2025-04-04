@@ -327,7 +327,8 @@ def create_tables() -> bool:
 
 def setup_opentelemetry():
     logging.info("Setting up OpenTelemetry")
-    exporter = OTLPMetricExporter(endpoint="http://otel-collector.monitoring.svc.cluster.local:4317", insecure=True)
+    endpoint = get_env_variable("OTEL_EXPORTER_OTLP_ENDPOINT")
+    exporter = OTLPMetricExporter(endpoint=endpoint, insecure=True)
     reader = PeriodicExportingMetricReader(exporter, export_interval_millis=5000)
     provider = MeterProvider(metric_readers=[reader])
     metrics.set_meter_provider(provider)
