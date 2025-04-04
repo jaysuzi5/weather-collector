@@ -1,4 +1,3 @@
-import sys
 from datetime import date, datetime
 from time import sleep
 import logging
@@ -7,7 +6,10 @@ import psycopg2
 import os
 import requests
 import json
-
+from opentelemetry import metrics
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
 class WeatherAPIWrapper:
     """
@@ -78,7 +80,7 @@ class WeatherAPIWrapper:
             logging.info(f"Response Content: {response.text}")
             return None
 
-    def load_current_weather(self, lat, lon, units="imperial"):
+    def load_current_weather(self, lat, lon, meter, units="imperial"):
         """
         Gets the current weather for a given latitude and longitude.
 
@@ -129,6 +131,9 @@ class WeatherAPIWrapper:
                             wind_direction = EXCLUDED.wind_direction;
                     """, (data['collection_time'], data['temperature'], data['temperature_min'], data['temperature_max'], data['humidity'], data['description'], data['feels_like'], data['wind_speed'], data['wind_direction']))
                     conn.commit()
+                    temperature_counter = meter.create_counter("temperature_readings", unit="F", description="Temperature readings")
+                    temperature_counter.add(round(response['main']['temp']), attributes={"location": "home"})
+
                     logging.info("load_current_weather:  Successfully Loaded Current Weather")
             except psycopg2.Error as e:
                 logging.error(f"load_current_weather: Error inserting/updating weather_current: {e}")
@@ -189,6 +194,7 @@ class WeatherAPIWrapper:
                             description = EXCLUDED.description;
                         """, (data['collection_time'], data['forecast_date'], data['temperature_min'], data['temperature_max'], data['humidity_min'], data['humidity_max'], data['description']))
                         conn.commit()
+
                     logging.info("load_forecast: Successfully Loaded Forecast Weather")
             except psycopg2.Error as e:
                 logging.error(f"load_forecast: Error inserting/updating weather_forecast: {e}")
@@ -319,6 +325,15 @@ def create_tables() -> bool:
         conn.close()
     return success
 
+def setup_opentelemetry():
+    logging.info("Setting up OpenTelemetry")
+    exporter = OTLPMetricExporter(endpoint="http://otel-collector.monitoring.svc.cluster.local:4317", insecure=True)
+    reader = PeriodicExportingMetricReader(exporter, export_interval_millis=5000)
+    provider = MeterProvider(metric_readers=[reader])
+    metrics.set_meter_provider(provider)
+
+    return metrics.get_meter("weather-app")
+
 def main():
     """
     Main function to continuously retrieve and log weather information.
@@ -332,6 +347,7 @@ def main():
     longitude = float(get_env_variable("LONGITUDE"))
     total_sleep_time = float(get_env_variable("WEATHER_SLEEP_SECONDS"))
     weather_api = WeatherAPIWrapper(api_key)
+    meter = setup_opentelemetry()
 
     logging.info('Starting Weather Collector')
     logging.info(f'latitude: {latitude}  longitude: {longitude}')
@@ -341,7 +357,7 @@ def main():
     while tables_exist:
         start_time = datetime.now()
         logging.info(f'Running at: {start_time}')
-        weather_api.load_current_weather(latitude, longitude)
+        weather_api.load_current_weather(latitude, longitude, meter)
         weather_api.load_forecast(latitude, longitude)
         end_time = datetime.now()
         sleep_time = total_sleep_time - (end_time - start_time).total_seconds()
