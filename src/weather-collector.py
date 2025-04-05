@@ -129,7 +129,6 @@ class WeatherAPIWrapper:
                             'wind_direction': response['wind']['deg']
                         }
                         with tracer.start_as_current_span("load_current_weather: DB Insert") as db_span:
-                            db_span.set_attribute("collection_time", current_time)
                             db_span.set_attribute("temperature", temp)
                             cursor.execute("""
                                 INSERT INTO weather_current (collection_time, temperature, temperature_min, temperature_max, humidity, description, feels_like, wind_speed, wind_direction)
@@ -204,8 +203,6 @@ class WeatherAPIWrapper:
                                 'description': item['weather'][0]['description']
                             }
                             with tracer.start_as_current_span("load_current_weather: DB Insert") as db_span:
-                                db_span.set_attribute("collection_time", current_time)
-                                db_span.set_attribute("forecast_date", forecast_date)
                                 db_span.set_attribute("temperature_min", item['main']['temp_min'])
                                 db_span.set_attribute("temperature_max", item['main']['temp_max'])
                                 cursor.execute("""
@@ -383,7 +380,7 @@ def main():
     Calls the weather API repeatedly, pausing for the specified sleep time between calls.
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    logging.info('Starting Weather Collector v0.2.6')
+    logging.info('Starting Weather Collector v0.2.7')
     api_key = get_env_variable("OPENWEATHER_API_KEY")
     latitude = float(get_env_variable("LATITUDE"))
     longitude = float(get_env_variable("LONGITUDE"))
@@ -402,9 +399,9 @@ def main():
             logging.info(f'Running at: {start_time}')
             weather_api.load_current_weather(latitude, longitude, meter, tracer)
             weather_api.load_forecast(latitude, longitude, meter, tracer)
-            end_time = datetime.now()
-            sleep_time = total_sleep_time - (end_time - start_time).total_seconds()
-            sleep(sleep_time)
+        end_time = datetime.now()
+        sleep_time = total_sleep_time - (end_time - start_time).total_seconds()
+        sleep(sleep_time)
 
 
 if __name__ == "__main__":
