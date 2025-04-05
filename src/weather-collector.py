@@ -100,6 +100,9 @@ class WeatherAPIWrapper:
         """
         conn = None
         cursor = None
+        logging.debug('starting load_current_weather span')
+        logging.debug(f'meter: {meter}')
+        logging.debug(f'tracer: {tracer}')
         with tracer.start_as_current_span("load_current_weather") as span:
             span.set_attribute("latitude", latitude)
             span.set_attribute("longitude", longitude)
@@ -141,6 +144,7 @@ class WeatherAPIWrapper:
                                 wind_direction = EXCLUDED.wind_direction;
                         """, (data['collection_time'], data['temperature'], data['temperature_min'], data['temperature_max'], data['humidity'], data['description'], data['feels_like'], data['wind_speed'], data['wind_direction']))
                         conn.commit()
+                        logging.debug(f'temp: {temp}')
                         temperature_counter = meter.create_counter("temperature_readings", unit="F", description="Temperature readings")
                         temperature_counter.add(temp, attributes={"location": "home"})
                         span.add_event("temperature_recorded", attributes={"temperature": temp})
@@ -171,6 +175,9 @@ class WeatherAPIWrapper:
         """
         conn = None
         cursor = None
+        logging.debug('starting load_forecast span')
+        logging.debug(f'meter: {meter}')
+        logging.debug(f'tracer: {tracer}')
         with tracer.start_as_current_span("load_forecast") as span:
             span.set_attribute("latitude", latitude)
             span.set_attribute("longitude", longitude)
@@ -209,9 +216,12 @@ class WeatherAPIWrapper:
                                 description = EXCLUDED.description;
                             """, (data['collection_time'], data['forecast_date'], data['temperature_min'], data['temperature_max'], data['humidity_min'], data['humidity_max'], data['description']))
                             conn.commit()
+
+                        forecast_records = len(response['list'])
                         temperature_counter = meter.create_counter("forecast_readings", description="Number of forecast readings")
-                        temperature_counter.add(len(response['list']), attributes={"location": "home"})
-                        span.add_event("temperature_forecast_recorded", attributes={"forecast_readings": response['list']})
+                        temperature_counter.add(forecast_records, attributes={"location": "home"})
+                        logging.debug(f'forecast_records: {forecast_records}')
+                        span.add_event("temperature_forecast_recorded", attributes={"forecast_readings": forecast_records})
                         logging.info("load_forecast: Successfully Loaded Forecast Weather")
                 except psycopg2.Error as e:
                     logging.error(f"load_forecast: Error inserting/updating weather_forecast: {e}")
@@ -366,7 +376,7 @@ def setup_opentelemetry():
     trace_provider.add_span_processor(span_processor)
     trace.set_tracer_provider(trace_provider)
     tracer = trace.get_tracer("weather-app")
-
+    logging.debug('OpenTelemetry setup complete')
     return meter, tracer
 
 def main():
@@ -377,20 +387,22 @@ def main():
     Calls the weather API repeatedly, pausing for the specified sleep time between calls.
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.info('Starting Weather Collector v0.2.3')
     api_key = get_env_variable("OPENWEATHER_API_KEY")
     latitude = float(get_env_variable("LATITUDE"))
     longitude = float(get_env_variable("LONGITUDE"))
+    logging.info(f'latitude: {latitude}  longitude: {longitude}')
+
     total_sleep_time = float(get_env_variable("WEATHER_SLEEP_SECONDS"))
     weather_api = WeatherAPIWrapper(api_key)
     meter, tracer = setup_opentelemetry()
 
-    logging.info('Starting Weather Collector')
-    logging.info(f'latitude: {latitude}  longitude: {longitude}')
 
     tables_exist = create_tables()
 
     while tables_exist:
         with tracer.start_as_current_span("weather_collection_cycle") as cycle_span:
+            logging.debug(f'cycle_span: {cycle_span}')
             start_time = datetime.now()
             logging.info(f'Running at: {start_time}')
             weather_api.load_current_weather(latitude, longitude, meter, tracer)
