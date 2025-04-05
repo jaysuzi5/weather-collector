@@ -13,7 +13,7 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
+from opentelemetry.sdk.resources import Resource
 
 class WeatherAPIWrapper:
     """
@@ -100,17 +100,15 @@ class WeatherAPIWrapper:
         """
         conn = None
         cursor = None
-        logging.debug('starting load_current_weather span')
-        logging.debug(f'meter: {meter}')
-        logging.debug(f'tracer: {tracer}')
         with tracer.start_as_current_span("load_current_weather") as span:
             span.set_attribute("latitude", latitude)
             span.set_attribute("longitude", longitude)
             endpoint = "weather"
             params = {"lat": latitude, "lon": longitude, "units": units}
             url = self._build_url(endpoint, params)
-            span.set_attribute("api_endpoint", url)
-            response = requests.get(url)
+            with tracer.start_as_current_span("load_current_weather: API Request") as api_span:
+                api_span.set_attribute("api_endpoint", url)
+                response = requests.get(url)
             response = WeatherAPIWrapper._parse_response(response)
             if response:
                 try:
@@ -130,21 +128,23 @@ class WeatherAPIWrapper:
                             'wind_speed': decimal.Decimal(response['wind']['speed']),
                             'wind_direction': response['wind']['deg']
                         }
-                        cursor.execute("""
-                            INSERT INTO weather_current (collection_time, temperature, temperature_min, temperature_max, humidity, description, feels_like, wind_speed, wind_direction)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            ON CONFLICT (collection_time) DO UPDATE SET
-                                temperature = EXCLUDED.temperature,
-                                temperature_min = EXCLUDED.temperature_min,
-                                temperature_max = EXCLUDED.temperature_max,
-                                humidity = EXCLUDED.humidity,
-                                description = EXCLUDED.description,
-                                feels_like = EXCLUDED.feels_like,
-                                wind_speed = EXCLUDED.wind_speed,
-                                wind_direction = EXCLUDED.wind_direction;
-                        """, (data['collection_time'], data['temperature'], data['temperature_min'], data['temperature_max'], data['humidity'], data['description'], data['feels_like'], data['wind_speed'], data['wind_direction']))
-                        conn.commit()
-                        logging.debug(f'temp: {temp}')
+                        with tracer.start_as_current_span("load_current_weather: DB Insert") as db_span:
+                            db_span.set_attribute("collection_time", current_time)
+                            db_span.set_attribute("temperature", temp)
+                            cursor.execute("""
+                                INSERT INTO weather_current (collection_time, temperature, temperature_min, temperature_max, humidity, description, feels_like, wind_speed, wind_direction)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (collection_time) DO UPDATE SET
+                                    temperature = EXCLUDED.temperature,
+                                    temperature_min = EXCLUDED.temperature_min,
+                                    temperature_max = EXCLUDED.temperature_max,
+                                    humidity = EXCLUDED.humidity,
+                                    description = EXCLUDED.description,
+                                    feels_like = EXCLUDED.feels_like,
+                                    wind_speed = EXCLUDED.wind_speed,
+                                    wind_direction = EXCLUDED.wind_direction;
+                            """, (data['collection_time'], data['temperature'], data['temperature_min'], data['temperature_max'], data['humidity'], data['description'], data['feels_like'], data['wind_speed'], data['wind_direction']))
+                            conn.commit()
                         temperature_counter = meter.create_counter("temperature_readings", unit="F", description="Temperature readings")
                         temperature_counter.add(temp, attributes={"location": "home"})
                         span.add_event("temperature_recorded", attributes={"temperature": temp})
@@ -175,17 +175,15 @@ class WeatherAPIWrapper:
         """
         conn = None
         cursor = None
-        logging.debug('starting load_forecast span')
-        logging.debug(f'meter: {meter}')
-        logging.debug(f'tracer: {tracer}')
         with tracer.start_as_current_span("load_forecast") as span:
             span.set_attribute("latitude", latitude)
             span.set_attribute("longitude", longitude)
             endpoint = "forecast"
             params = {"lat": latitude, "lon": longitude, "units": units}
             url = self._build_url(endpoint, params)
-            span.set_attribute("api_endpoint", url)
-            response = requests.get(url)
+            with tracer.start_as_current_span("load_current_weather: API Request") as api_span:
+                api_span.set_attribute("api_endpoint", url)
+                response = requests.get(url)
             response = WeatherAPIWrapper._parse_response(response)
 
             if response:
@@ -205,22 +203,26 @@ class WeatherAPIWrapper:
                                 'humidity_max': item['main']['humidity'],
                                 'description': item['weather'][0]['description']
                             }
-                            cursor.execute("""
-                            INSERT INTO weather_forecast (collection_time, forecast_date, temperature_min, temperature_max, humidity_min, humidity_max, description)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                             ON CONFLICT (collection_time, forecast_date) DO UPDATE SET
-                                temperature_min = EXCLUDED.temperature_min,
-                                temperature_max = EXCLUDED.temperature_max,
-                                humidity_min = EXCLUDED.humidity_min,
-                                humidity_max = EXCLUDED.humidity_max,
-                                description = EXCLUDED.description;
-                            """, (data['collection_time'], data['forecast_date'], data['temperature_min'], data['temperature_max'], data['humidity_min'], data['humidity_max'], data['description']))
-                            conn.commit()
+                            with tracer.start_as_current_span("load_current_weather: DB Insert") as db_span:
+                                db_span.set_attribute("collection_time", current_time)
+                                db_span.set_attribute("forecast_date", forecast_date)
+                                db_span.set_attribute("temperature_min", item['main']['temp_min'])
+                                db_span.set_attribute("temperature_max", item['main']['temp_max'])
+                                cursor.execute("""
+                                INSERT INTO weather_forecast (collection_time, forecast_date, temperature_min, temperature_max, humidity_min, humidity_max, description)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                 ON CONFLICT (collection_time, forecast_date) DO UPDATE SET
+                                    temperature_min = EXCLUDED.temperature_min,
+                                    temperature_max = EXCLUDED.temperature_max,
+                                    humidity_min = EXCLUDED.humidity_min,
+                                    humidity_max = EXCLUDED.humidity_max,
+                                    description = EXCLUDED.description;
+                                """, (data['collection_time'], data['forecast_date'], data['temperature_min'], data['temperature_max'], data['humidity_min'], data['humidity_max'], data['description']))
+                                conn.commit()
 
                         forecast_records = len(response['list'])
                         temperature_counter = meter.create_counter("forecast_readings", description="Number of forecast readings")
                         temperature_counter.add(forecast_records, attributes={"location": "home"})
-                        logging.debug(f'forecast_records: {forecast_records}')
                         span.add_event("temperature_forecast_recorded", attributes={"forecast_readings": forecast_records})
                         logging.info("load_forecast: Successfully Loaded Forecast Weather")
                 except psycopg2.Error as e:
@@ -352,31 +354,25 @@ def create_tables() -> bool:
         conn.close()
     return success
 
-def get_env_variable(name):
-    value = os.getenv(name)
-    if not value:
-        raise ValueError(f"Environment variable {name} is not set")
-    return value
-
 def setup_opentelemetry():
     logging.info("Setting up OpenTelemetry")
     endpoint = get_env_variable("OTEL_EXPORTER_OTLP_ENDPOINT")
+    resource = Resource(attributes={"service.name": "weather-app"})
 
     # Metrics setup
     metric_exporter = OTLPMetricExporter(endpoint=endpoint, insecure=True)
     reader = PeriodicExportingMetricReader(metric_exporter, export_interval_millis=5000)
-    meter_provider = MeterProvider(metric_readers=[reader])
+    meter_provider = MeterProvider(metric_readers=[reader], resource=resource)
     metrics.set_meter_provider(meter_provider)
     meter = metrics.get_meter("weather-app")
 
     # Tracing setup
-    trace_provider = TracerProvider()
+    trace_provider = TracerProvider(resource=resource)
     trace_exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
     span_processor = BatchSpanProcessor(trace_exporter)
     trace_provider.add_span_processor(span_processor)
     trace.set_tracer_provider(trace_provider)
     tracer = trace.get_tracer("weather-app")
-    logging.debug('OpenTelemetry setup complete')
     return meter, tracer
 
 def main():
@@ -387,7 +383,7 @@ def main():
     Calls the weather API repeatedly, pausing for the specified sleep time between calls.
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    logging.info('Starting Weather Collector v0.2.3')
+    logging.info('Starting Weather Collector v0.2.4')
     api_key = get_env_variable("OPENWEATHER_API_KEY")
     latitude = float(get_env_variable("LATITUDE"))
     longitude = float(get_env_variable("LONGITUDE"))
@@ -402,7 +398,6 @@ def main():
 
     while tables_exist:
         with tracer.start_as_current_span("weather_collection_cycle") as cycle_span:
-            logging.debug(f'cycle_span: {cycle_span}')
             start_time = datetime.now()
             logging.info(f'Running at: {start_time}')
             weather_api.load_current_weather(latitude, longitude, meter, tracer)
