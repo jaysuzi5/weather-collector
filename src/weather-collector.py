@@ -383,7 +383,7 @@ def main():
     Calls the weather API repeatedly, pausing for the specified sleep time between calls.
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    logging.info('Starting Weather Collector v0.2.4')
+    logging.info('Starting Weather Collector v0.2.6')
     api_key = get_env_variable("OPENWEATHER_API_KEY")
     latitude = float(get_env_variable("LATITUDE"))
     longitude = float(get_env_variable("LONGITUDE"))
