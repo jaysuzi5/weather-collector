@@ -384,7 +384,6 @@ def setup_opentelemetry():
     log_exporter = OTLPLogExporter(endpoint=endpoint, insecure=True)
     log_processor = BatchLogRecordProcessor(log_exporter)
     log_provider.add_log_record_processor(log_processor)
-    trace.set_logger_provider(log_provider)
 
     # Replace basic logging with OTel handler
     handler = LoggingHandler(level=logging.INFO, logger_provider=log_provider)
@@ -403,7 +402,7 @@ def main():
     """
     meter, tracer = setup_opentelemetry()
     logging.info("OpenTelemetry setup complete")
-    logging.info('Starting Weather Collector v0.2.8')
+    logging.info('Starting Weather Collector v0.2.9')
     api_key = get_env_variable("OPENWEATHER_API_KEY")
     latitude = float(get_env_variable("LATITUDE"))
     longitude = float(get_env_variable("LONGITUDE"))
