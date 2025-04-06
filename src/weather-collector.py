@@ -9,11 +9,16 @@ import json
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter  # Protected, functional in 1.31.1
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler  # Protected, functional in 1.31.1
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor  # Protected, functional in 1.31.1
 from opentelemetry.sdk.resources import Resource
+
+
 
 class WeatherAPIWrapper:
     """
@@ -352,8 +357,11 @@ def create_tables() -> bool:
     return success
 
 def setup_opentelemetry():
+    # Temporary console logging until OTel handler is set up
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     logging.info("Setting up OpenTelemetry")
     endpoint = get_env_variable("OTEL_EXPORTER_OTLP_ENDPOINT")
+
     resource = Resource(attributes={"service.name": "weather-app"})
 
     # Metrics setup
@@ -370,6 +378,20 @@ def setup_opentelemetry():
     trace_provider.add_span_processor(span_processor)
     trace.set_tracer_provider(trace_provider)
     tracer = trace.get_tracer("weather-app")
+
+    # Logging setup
+    log_provider = LoggerProvider(resource=resource)
+    log_exporter = OTLPLogExporter(endpoint=endpoint, insecure=True)
+    log_processor = BatchLogRecordProcessor(log_exporter)
+    log_provider.add_log_record_processor(log_processor)
+    trace.set_logger_provider(log_provider)
+
+    # Replace basic logging with OTel handler
+    handler = LoggingHandler(level=logging.INFO, logger_provider=log_provider)
+    logging.getLogger().handlers = []  # Clear existing handlers
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.INFO)
+
     return meter, tracer
 
 def main():
@@ -379,8 +401,9 @@ def main():
     Reads API key, latitude, longitude, and sleep time from environment variables.
     Calls the weather API repeatedly, pausing for the specified sleep time between calls.
     """
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    logging.info('Starting Weather Collector v0.2.7')
+    meter, tracer = setup_opentelemetry()
+    logging.info("OpenTelemetry setup complete")
+    logging.info('Starting Weather Collector v0.2.8')
     api_key = get_env_variable("OPENWEATHER_API_KEY")
     latitude = float(get_env_variable("LATITUDE"))
     longitude = float(get_env_variable("LONGITUDE"))
@@ -388,13 +411,11 @@ def main():
 
     total_sleep_time = float(get_env_variable("WEATHER_SLEEP_SECONDS"))
     weather_api = WeatherAPIWrapper(api_key)
-    meter, tracer = setup_opentelemetry()
-
 
     tables_exist = create_tables()
 
     while tables_exist:
-        with tracer.start_as_current_span("weather_collection_cycle") as cycle_span:
+        with tracer.start_as_current_span("weather_collection_cycle"):
             start_time = datetime.now()
             logging.info(f'Running at: {start_time}')
             weather_api.load_current_weather(latitude, longitude, meter, tracer)
