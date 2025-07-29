@@ -20,4 +20,4 @@ ENV LONGITUDE=-74.0060
 ENV WEATHER_SLEEP_SECONDS=300
 
 # Command to run the application
-CMD ["opentelemetry-instrument", "--logs_exporter", "otlp", "--traces_exporter", "otlp", "python", "/app/src/weather-collector.py"]
+CMD ["python", "/app/src/weather-collector.py"]

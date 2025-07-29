@@ -523,7 +523,7 @@ def main():
     """
     # meter, tracer = setup_opentelemetry()
     # logging.info("OpenTelemetry setup complete")
-    logging.info('Starting Weather Collector v0.2.9')
+    logging.info('Starting Weather Collector v0.2.10')
     api_key = get_env_variable("OPENWEATHER_API_KEY")
     latitude = float(get_env_variable("LATITUDE"))
     longitude = float(get_env_variable("LONGITUDE"))
