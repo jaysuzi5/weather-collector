@@ -20,6 +20,29 @@ import json
 
 
 
+import logging
+import sys
+
+# Configure logging to output to stdout
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout,
+    force=True  # Override any existing handlers
+)
+logger = logging.getLogger(__name__)
+
+print('PRINT: Starting Weather Collector v0.3.1')
+logger.info("Test log message")
+logging.info('Starting Weather Collector v0.3.1')
+
+# Add periodic log for debugging
+import time
+while True:
+    print("DEBUG: Application running")
+    logger.info("DEBUG: Application running")
+    time.sleep(60)  # Log every 60 seconds
+
 class WeatherAPIWrapper:
     """
     A wrapper class for interacting with a weather API, specifically OpenWeatherMap.
