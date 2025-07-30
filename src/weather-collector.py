@@ -23,25 +23,13 @@ import json
 import logging
 import sys
 
-# Configure logging to output to stdout
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    stream=sys.stdout,
-    force=True  # Override any existing handlers
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-print('PRINT: Starting Weather Collector v0.3.1')
-logger.info("Test log message")
-logging.info('Starting Weather Collector v0.3.1')
-
-# Add periodic log for debugging
-import time
-while True:
-    print("DEBUG: Application running")
-    logger.info("DEBUG: Application running")
-    time.sleep(60)  # Log every 60 seconds
+logger.debug("LEVEL: debug")
+logger.info("LEVEL: info")
+logger.warn("LEVEL: warn (deprecated")
+logger.warning("LEVEL: warning")
+logger.error("LEVEL: error")
 
 class WeatherAPIWrapper:
     """
@@ -546,11 +534,11 @@ def main():
     """
     # meter, tracer = setup_opentelemetry()
     # logging.info("OpenTelemetry setup complete")
-    print('PRINT: Starting Weather Collector v0.3.1')
+    print('PRINT: Starting Weather Collector v0.3.2')
     logger = logging.getLogger(__name__)
     logger.info("Test log message")
 
-    logging.info('Starting Weather Collector v0.3.1')
+    logging.info('Starting Weather Collector v0.3.2')
     api_key = get_env_variable("OPENWEATHER_API_KEY")
     latitude = float(get_env_variable("LATITUDE"))
     longitude = float(get_env_variable("LONGITUDE"))
