@@ -28,74 +28,47 @@ Future planned enhancements include:
 ├── requirements.txt
 ├── src/
 │   └── weather-collector.py
+│   └──configuration/
+│      └── configuration.yaml
 └── .env
 ```
 
-## Local Installation and Setup
-
-1. Clone this repository
-
-2. Create a `.env` file in the project root with the following variables:
-
-   ```bash
-    LATITUDE=<<your-weather-location-latitude>>
-    LONGITUDE=<<your-weather-location-longitude>>
-    WEATHER_SLEEP_SECONDS=<<time-to-sleep-between-weather-calls-in-seconds>>
-    OPENWEATHER_API_KEY=<<your-open-weather-api-key>>
-    POSTGRES_USER=<<your-postgresql-username>>
-    POSTGRES_PASSWORD=<<your-postgresql-password>>
-    POSTGRES_DB=<<your-postgresql-database-name>>
-   ```
-
-## Usage
-
-To run the application using Docker Compose:
+## Environment Variables
+The following environment variables need to be defined  
 
 ```bash
-docker-compose up --build
+OPENWEATHER_API_KEY
+LATITUDE
+LONGITUDE
+BASE_URL
+CREATE_TABLES
+POSTGRES_HOST
+POSTGRES_PORT
+POSTGRES_USER
+POSTGRES_PASSWORD
+POSTGRES_DB
 ```
 
-This command will:
+## Error Handling
 
-1. Build the Docker image for the Weather Collector application
-2. Start a PostgreSQL container
-3. Start the Weather Collector container
-4. Connect the OpenWeather API and collect the data
-5. Log the data to the PostgreSQL database
+There is no specific retry logic at this time. If there are errors with one session, this should be logged and it will
+retry the same pull for a full 24 hours. 
 
-To stop the application:
+## Traces, Logs, and Metrics
+
+Logs are exposed as OpenTelemetry.  When running locally, the collector will capture Traces to Tempo, Logs to Splunk, 
+and metrics to Prometheus. 
+
+## Docker File
 
 ```bash
-docker-compose down
+docker login
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t jaysuzi5/weather-collector:latest \
+  --push .
 ```
 
-To stop the application and remove the volumes (this will delete the database data):
-
-```bash
-docker-compose down -v
-```
-
-When running on Docker on MacOS, cycles can be missed when the system hibernates.  To prevent this, you can use 
-caffeinate to keep it active
-
-```bash
-caffeinate -d docker attach weather-app-container
-```
-
-## Docker Configuration
-
-### Dockerfile
-
-The Dockerfile sets up the Python environment and installs the necessary dependencies:
-
-```dockerfile
-FROM python:3.12.5-alpine3.20
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY src/ .
-CMD ["python", "main.py"]
-```
 
 ### Docker Compose
 
@@ -138,14 +111,3 @@ CREATE TABLE weather_forecast (
     PRIMARY KEY (collection_time, forecast_date)
 );
 ```
-
-
-## Error Handling
-
-There is no specific retry logic at this time.  If either the API or PostgreSQL fails, an ERROR log statement will
-be created.  It will try again on the next cycle. 
-
-## Logging
-
-The script uses Python's built-in logging module to provide informative logs about its operation. Logs are printed to 
-the console with timestamps and can be viewed using `docker-compose logs mqtt-client`.
