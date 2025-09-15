@@ -1,0 +1,3 @@
+logging_info:
+  component: "weather-collector"
+  component_type: "python"

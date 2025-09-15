@@ -17,7 +17,8 @@ COPY src/ /app/src/
 ENV OPENWEATHER_API_KEY=tbd
 ENV LATITUDE=40.7128
 ENV LONGITUDE=-74.0060
-ENV WEATHER_SLEEP_SECONDS=300
+ENV BASE_URL="http://api.openweathermap.org/data/2.5/"
+
 
 # Command to run the application
 CMD ["opentelemetry-instrument", "--logs_exporter", "otlp", "--traces_exporter", "otlp", "python", "/app/src/weather-collector.py"]

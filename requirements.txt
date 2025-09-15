@@ -1,3 +1,5 @@
+dotenv==0.9.9
+j-utilities-toolkit==0.0.1
 requests==2.32.3
 psycopg2-binary==2.9.10
 opentelemetry-distro
