@@ -181,7 +181,7 @@ class WeatherCollector:
         return_code = 200
         payload = {}
         source_transaction = self._logger.transaction_event(EventType.SPAN_START,
-                                                            source_component="Postgres: weather_current",
+                                                            source_component="Postgres: weather_forecast",
                                                             transaction=self._transaction)
         try:
             conn = connect_to_database()
